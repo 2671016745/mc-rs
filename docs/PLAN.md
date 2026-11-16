@@ -29,15 +29,26 @@
 
 | 模块 | 状态 | 说明 |
 |---|---|---|
-| `assets` | ✅ 基础完成 | 版本清单下载、sha1 校验、jar 资产/数据索引 |
-| `registry` | ✅ 基础完成 | blockstates → 方块注册表（变体/multipart/模型） |
-| `protocol` | ✅ 基础完成 | VarInt/VarLong/字符串/组帧（protocol 767） |
-| `modsys` | 🚧 管理面完成 | 清单解析、依赖检查；运行时待实现 |
-| `auth` | ⬜ | 离线 / 第三方 Yggdrasil / 微软 OAuth |
-| `skin` | ⬜ | 皮肤与披风加载、离线自定义皮肤 |
-| `net` | ⬜ | 服务器 ping、状态、登录握手、加密 |
-| `render` | ⬜ | wgpu 渲染、区块 meshing、模型/纹理 |
+| `assets` | ✅ | 版本清单下载、sha1 校验、jar 资产/数据索引 |
+| `registry` | ✅ | blockstates → 方块注册表（变体/multipart/模型） |
+| `protocol` | ✅ | VarInt/VarLong/字符串/坐标/组帧（protocol 767） |
+| `net` | ✅ | TCP 帧、ping、离线登录握手、RSA + AES-128-CFB8 |
+| `auth` | ✅ | 离线 / 第三方 Yggdrasil / 微软完整链 |
+| `skin` | ✅ | 正版纹理属性解码、离线皮肤读取 |
+| `server` | ✅ | 服务器列表持久化 + ping |
+| `modsys` | ✅ 管理面 | NeoForge(`neoforge.mods.toml`) + Fabric(`fabric.mod.json`) 清单/依赖 |
+| `modruntime` | 🚧 | 自研 `mcmod.toml` + Lua 5.4 运行时 |
+| `render` | 🚧 骨架 | wgpu 窗口/清屏；区块 meshing、模型/纹理待建 |
 | `game` | ⬜ | 世界/实体/玩法循环 |
+
+## Java mod 兼容（用户追加要求）
+
+结论（详见 `docs/java-mod-bridge.md`）：原样加载任意 Java mod jar 不可行；分层混合可行：
+- Tier 0 内容携带（纯资产/数据 mod，走原生内容管线）；
+- Tier 1 有界字节码解释器（解析清单/入口，映射注册到 Rust）；
+- Tier 2 JVM 兜底（显式指定 jar 才允许，作 oracle）；
+- Tier 3 头部 mod 人工移植。
+参考 horizon-java 的 tier 模型（约 500 jar 中 111 个 ran-clean）。
 
 ## 发布策略
 

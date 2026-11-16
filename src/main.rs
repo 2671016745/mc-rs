@@ -5,6 +5,7 @@ mod modsys;
 mod net;
 mod protocol;
 mod registry;
+mod render;
 mod server;
 mod skin;
 
@@ -82,6 +83,8 @@ enum Cmd {
     },
     /// 加载自研 mod（Lua）
     Mods { dir: PathBuf },
+    /// 打开渲染窗口（wgpu 骨架）
+    Render,
 }
 
 #[derive(Subcommand)]
@@ -267,6 +270,9 @@ fn main() -> Result<()> {
             for m in mods {
                 println!("- {} v{}", m.manifest.id, m.manifest.version);
             }
+        }
+        Cmd::Render => {
+            render::run()?;
         }
     }
     Ok(())

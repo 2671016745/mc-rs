@@ -11,6 +11,7 @@ clap = { version = "4.6.7", features = ["derive"] }
 flate2 = "1.1.11"
 md5 = "0.8.1"
 mlua = { version = "0.9", features = ["lua54", "vendored"] }
+pollster = "1.0.1"
 rand = "0.8"
 rsa = "0.9"
 serde = { version = "1.0.229", features = ["derive"] }
@@ -20,4 +21,6 @@ thiserror = "2.0.21"
 toml = "1.2.1"
 ureq = { version = "2.12.1", features = ["json"] }
 uuid = { version = "1.29.2", features = ["v4", "serde"] }
+wgpu = "0.20"
+winit = "0.29"
 zip = { version = "9.6.0", default-features = false, features = ["deflate"] }
