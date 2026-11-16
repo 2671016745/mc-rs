@@ -1,16 +1,6 @@
-mod assets;
-mod auth;
-mod modruntime;
-mod modsys;
-mod net;
-mod protocol;
-mod registry;
-mod render;
-mod server;
-mod skin;
-
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use mc_rs::{assets, auth, modruntime, modsys, net, protocol, registry, render, server, skin};
 use std::path::PathBuf;
 
 #[derive(Parser)]

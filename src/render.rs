@@ -9,6 +9,34 @@ use winit::event::{Event, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::window::WindowBuilder;
 
+const TRIANGLE_SHADER: &str = r#"
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) color: vec3<f32>,
+};
+@vertex
+fn vs(@builtin(vertex_index) i: u32) -> VsOut {
+    var pos = array<vec2<f32>, 3>(
+        vec2<f32>(0.0, 0.5),
+        vec2<f32>(-0.5, -0.5),
+        vec2<f32>(0.5, -0.5)
+    );
+    var col = array<vec3<f32>, 3>(
+        vec3<f32>(1.0, 0.0, 0.0),
+        vec3<f32>(0.0, 1.0, 0.0),
+        vec3<f32>(0.0, 0.0, 1.0)
+    );
+    var out: VsOut;
+    out.pos = vec4<f32>(pos[i], 0.0, 1.0);
+    out.color = col[i];
+    return out;
+}
+@fragment
+fn fs(in: VsOut) -> @location(0) vec4<f32> {
+    return vec4<f32>(in.color, 1.0);
+}
+"#;
+
 pub fn run() -> Result<()> {
     let event_loop = EventLoop::new()?;
     let window = std::sync::Arc::new(
@@ -38,6 +66,31 @@ pub fn run() -> Result<()> {
     config.present_mode = wgpu::PresentMode::Fifo;
     surface.configure(&device, &config);
 
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("triangle"),
+        source: wgpu::ShaderSource::Wgsl(TRIANGLE_SHADER.into()),
+    });
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("triangle"),
+        layout: None,
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: "vs",
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: "fs",
+            targets: &[Some(config.format.into())],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+    });
+
     event_loop.run(move |event, target| match event {
         Event::WindowEvent {
             event: WindowEvent::CloseRequested,
@@ -54,7 +107,7 @@ pub fn run() -> Result<()> {
             let view = frame.texture.create_view(&Default::default());
             let mut enc = device.create_command_encoder(&Default::default());
             {
-                let _pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view,
                         resolve_target: None,
@@ -70,6 +123,8 @@ pub fn run() -> Result<()> {
                     })],
                     ..Default::default()
                 });
+                pass.set_pipeline(&pipeline);
+                pass.draw(0..3, 0..1);
             }
             queue.submit([enc.finish()]);
             frame.present();

@@ -36,8 +36,17 @@ cargo test
 ## 使用
 
 ```bash
-cargo run -- assets-fetch --version 1.21.1 --kind client --out client.jar
+cargo run -- fetch --version 1.21.1 --kind client --out client.jar
 cargo run -- index client.jar --out index.json
 cargo run -- registry client.jar --out registry.json
 cargo run -- mod path/to/neoforge.mods.toml
+cargo run -- auth-offline Steve
+cargo run -- auth-yggdrasil https://authserver.example.com <username>
+cargo run -- auth-microsoft-device --client-id <client-id>
+cargo run -- servers add "My Server" mc.example.com --port 25565
+cargo run -- servers ping
+cargo run -- skin-fetch <uuid>
+cargo run -- login-offline 127.0.0.1 --port 25565 Steve
+cargo run -- mods ./mods
+cargo run -- render
 ```
