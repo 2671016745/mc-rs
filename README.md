@@ -47,6 +47,7 @@ cargo run -- servers add "My Server" mc.example.com --port 25565
 cargo run -- servers ping
 cargo run -- skin-fetch <uuid>
 cargo run -- login-offline 127.0.0.1 --port 25565 Steve
+cargo run -- login-play 127.0.0.1 --port 25565 Steve
 cargo run -- mods ./mods
 cargo run -- render
 ```

@@ -25,6 +25,16 @@ AES-128-CFB8（openssl 向量）、RSA PKCS#1 v1.5 roundtrip、
 - 客户端回 Login Acknowledged(0x03)
 - 结果：完整闭环，mock 侧打印 `ack packet 3 ... done`
 
+## 完整进服（官方 1.21.1 服务器，离线模式）
+
+本地跑官方服务端（`online-mode=false`），`login-play` 完成 configuration 协商并进入 Play：
+
+- 解析出 entity_id=16、维度 3 个（overworld/the_end/the_nether）、hashed_seed、game_mode=0
+- configuration 阶段处理 11 个 Registry Data、Update Tags、Known Packs(minecraft:core 1.21)、Finish Configuration
+- Play 阶段收到 Login(play) 及能力/位置/区块等 20+ 个包
+
+（服务端：Temurin JDK 21 + 官方 server.jar，均装在用户目录/scratch，未入仓库。）
+
 ## 加密向量
 
 - AES-128-CFB8：key=000102…0f，iv=0，pt=000102…0f →
