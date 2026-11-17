@@ -234,6 +234,12 @@ impl<'a> PacketReader<'a> {
     pub fn u16(&mut self) -> Option<u16> {
         self.take(2).map(|b| u16::from_be_bytes([b[0], b[1]]))
     }
+    pub fn u32(&mut self) -> Option<u32> {
+        self.take(4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+    }
+    pub fn i16(&mut self) -> Option<i16> {
+        self.take(2).map(|b| i16::from_be_bytes([b[0], b[1]]))
+    }
     pub fn i32(&mut self) -> Option<i32> {
         self.take(4).map(|b| i32::from_be_bytes([b[0], b[1], b[2], b[3]]))
     }

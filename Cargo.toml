@@ -3,6 +3,11 @@ name = "mc-rs"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+# 渲染层为可选：wgpu/winit 依赖重，默认不编译（小内存机器友好）。
+render = ["dep:wgpu", "dep:winit", "dep:pollster"]
+
 [dependencies]
 aes = "0.9"
 anyhow = "1.0.104"
@@ -11,7 +16,7 @@ clap = { version = "4.6.7", features = ["derive"] }
 flate2 = "1.1.11"
 md5 = "0.8.1"
 mlua = { version = "0.9", features = ["lua54", "vendored"] }
-pollster = "1.0.1"
+pollster = { version = "1.0.1", optional = true }
 rand = "0.8"
 rsa = "0.9"
 serde = { version = "1.0.229", features = ["derive"] }
@@ -21,6 +26,6 @@ thiserror = "2.0.21"
 toml = "1.2.1"
 ureq = { version = "2.12.1", features = ["json"] }
 uuid = { version = "1.29.2", features = ["v4", "serde"] }
-wgpu = "0.20"
-winit = "0.29"
+wgpu = { version = "0.20", optional = true }
+winit = { version = "0.29", optional = true }
 zip = { version = "9.6.0", default-features = false, features = ["deflate"] }

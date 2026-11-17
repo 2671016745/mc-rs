@@ -417,6 +417,8 @@ pub struct PlayLogin {
     pub portal_cooldown: i32,
     pub enforces_secure_chat: bool,
     pub registry_packets: usize,
+    pub chunks_loaded: usize,
+    pub non_air_blocks: usize,
 }
 
 fn parse_login_play(body: &[u8]) -> Result<PlayLogin> {
@@ -473,6 +475,8 @@ fn parse_login_play(body: &[u8]) -> Result<PlayLogin> {
         portal_cooldown,
         enforces_secure_chat,
         registry_packets: 0,
+        chunks_loaded: 0,
+        non_air_blocks: 0,
     })
 }
 
@@ -550,16 +554,39 @@ pub fn login_play(address: &str, port: u16, name: &str) -> Result<PlayLogin> {
         }
     }
 
-    // ---- Play 阶段：等待 Login(play) 0x2b
-    loop {
+    // ---- Play 阶段：先拿 Login(play)，再收第一个区块验证地形解析
+    let mut info: Option<PlayLogin> = None;
+    let mut chunks = 0usize;
+    let mut non_air = 0usize;
+    while info.is_none() || chunks == 0 {
         let (id, body) = read_frame_c(&mut s, threshold)?;
-        if id == 0x2b {
-            let mut info = parse_login_play(&body)?;
-            info.registry_packets = registry_packets;
-            return Ok(info);
+        match id {
+            0x2b => {
+                let mut i = parse_login_play(&body)?;
+                i.registry_packets = registry_packets;
+                info = Some(i);
+            }
+            0x27 => match crate::world::parse_chunk_data(&body) {
+                Ok(ch) => {
+                    non_air += ch.non_air();
+                    chunks += 1;
+                    eprintln!(
+                        "chunk {},{} sections={} non_air={}",
+                        ch.x,
+                        ch.z,
+                        ch.sections.len(),
+                        ch.non_air()
+                    );
+                }
+                Err(e) => eprintln!("chunk parse error: {e}"),
+            },
+            _ => {}
         }
-        // 其余包（能力、物品栏、keep alive 等）暂忽略
     }
+    let mut i = info.context("no login play packet")?;
+    i.chunks_loaded = chunks;
+    i.non_air_blocks = non_air;
+    Ok(i)
 }
 
 #[cfg(test)]

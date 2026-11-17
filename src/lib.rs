@@ -15,6 +15,8 @@ pub mod modsys;
 pub mod net;
 pub mod protocol;
 pub mod registry;
+#[cfg(feature = "render")]
 pub mod render;
 pub mod server;
 pub mod skin;
+pub mod world;

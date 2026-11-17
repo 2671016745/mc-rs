@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use mc_rs::{assets, auth, modruntime, modsys, net, protocol, registry, render, server, skin};
+use mc_rs::{assets, auth, modruntime, modsys, net, registry, server, skin};
+#[cfg(feature = "render")]
+use mc_rs::render;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -81,6 +83,7 @@ enum Cmd {
     /// 加载自研 mod（Lua）
     Mods { dir: PathBuf },
     /// 打开渲染窗口（wgpu 骨架）
+    #[cfg(feature = "render")]
     Render,
 }
 
@@ -276,6 +279,7 @@ fn main() -> Result<()> {
                 println!("- {} v{}", m.manifest.id, m.manifest.version);
             }
         }
+        #[cfg(feature = "render")]
         Cmd::Render => {
             render::run()?;
         }
