@@ -71,6 +71,13 @@ enum Cmd {
         port: u16,
         name: String,
     },
+    /// 完整进服（configuration 协商 + Play 登录包）
+    LoginPlay {
+        address: String,
+        #[arg(long, default_value_t = 25565)]
+        port: u16,
+        name: String,
+    },
     /// 加载自研 mod（Lua）
     Mods { dir: PathBuf },
     /// 打开渲染窗口（wgpu 骨架）
@@ -248,6 +255,14 @@ fn main() -> Result<()> {
         } => {
             let s = net::login_offline(&address, port, &name)?;
             println!("{}", serde_json::to_string_pretty(&s)?);
+        }
+        Cmd::LoginPlay {
+            address,
+            port,
+            name,
+        } => {
+            let info = net::login_play(&address, port, &name)?;
+            println!("{}", serde_json::to_string_pretty(&info)?);
         }
         Cmd::Mods { dir } => {
             let mut rt = modruntime::ModRuntime::new()?;

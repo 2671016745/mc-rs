@@ -391,6 +391,177 @@ pub fn login_offline(address: &str, port: u16, name: &str) -> Result<LoginSucces
     }
 }
 
+// ---------------------------------------------------------------- 完整进服
+
+#[derive(Debug, serde::Serialize)]
+pub struct PlayLogin {
+    pub entity_id: i32,
+    pub hardcore: bool,
+    pub dimensions: Vec<String>,
+    pub max_players: i32,
+    pub view_distance: i32,
+    pub simulation_distance: i32,
+    pub reduced_debug_info: bool,
+    pub enable_respawn_screen: bool,
+    pub do_limited_crafting: bool,
+    pub dimension_type: i32,
+    pub dimension_name: String,
+    pub hashed_seed: i64,
+    pub game_mode: u8,
+    pub previous_game_mode: i8,
+    pub is_debug: bool,
+    pub is_flat: bool,
+    pub has_death_location: bool,
+    pub death_dimension: Option<String>,
+    pub death_location: Option<(i32, i32, i32)>,
+    pub portal_cooldown: i32,
+    pub enforces_secure_chat: bool,
+    pub registry_packets: usize,
+}
+
+fn parse_login_play(body: &[u8]) -> Result<PlayLogin> {
+    let mut r = protocol::PacketReader::new(body);
+    let entity_id = r.i32().context("entity id")?;
+    let hardcore = r.boolean().unwrap_or(false);
+    let dim_count = r.varint().context("dimension count")? as usize;
+    let mut dimensions = Vec::with_capacity(dim_count);
+    for _ in 0..dim_count {
+        dimensions.push(r.string().context("dimension name")?);
+    }
+    let max_players = r.varint().context("max players")?;
+    let view_distance = r.varint().context("view distance")?;
+    let simulation_distance = r.varint().context("simulation distance")?;
+    let reduced_debug_info = r.boolean().unwrap_or(false);
+    let enable_respawn_screen = r.boolean().unwrap_or(true);
+    let do_limited_crafting = r.boolean().unwrap_or(false);
+    let dimension_type = r.varint().context("dimension type")?;
+    let dimension_name = r.string().context("dimension name")?;
+    let hashed_seed = r.i64().context("hashed seed")?;
+    let game_mode = r.u8().unwrap_or(0);
+    let previous_game_mode = r.i8().unwrap_or(-1);
+    let is_debug = r.boolean().unwrap_or(false);
+    let is_flat = r.boolean().unwrap_or(false);
+    let has_death_location = r.boolean().unwrap_or(false);
+    let mut death_dimension = None;
+    let mut death_location = None;
+    if has_death_location {
+        death_dimension = Some(r.string().context("death dimension")?);
+        death_location = r.position();
+    }
+    let portal_cooldown = r.varint().context("portal cooldown")?;
+    let enforces_secure_chat = r.boolean().unwrap_or(false);
+    Ok(PlayLogin {
+        entity_id,
+        hardcore,
+        dimensions,
+        max_players,
+        view_distance,
+        simulation_distance,
+        reduced_debug_info,
+        enable_respawn_screen,
+        do_limited_crafting,
+        dimension_type,
+        dimension_name,
+        hashed_seed,
+        game_mode,
+        previous_game_mode,
+        is_debug,
+        is_flat,
+        has_death_location,
+        death_dimension,
+        death_location,
+        portal_cooldown,
+        enforces_secure_chat,
+        registry_packets: 0,
+    })
+}
+
+/// 完整进服：登录 → configuration 协商 → Play 的 Login 包。
+///
+/// 与 `login_offline` 的区别：本函数完成 configuration 阶段（Client Information、
+/// Known Packs、Registry/Tags、Finish Configuration），进入 Play 并解析 Login(play)。
+pub fn login_play(address: &str, port: u16, name: &str) -> Result<PlayLogin> {
+    let account = crate::auth::offline(name);
+    let mut s = connect(address, port)?;
+    write_handshake(&mut s, address, port, STATE_LOGIN)?;
+    write_frame(&mut s, login::START, &login_start_body(&account.name, account.uuid))?;
+
+    // ---- Login 阶段
+    let mut threshold = -1i32;
+    let mut comp = false;
+    loop {
+        let (id, body) = if comp {
+            read_frame_c(&mut s, threshold)?
+        } else {
+            read_frame(&mut s)?
+        };
+        match id {
+            0x00 => bail!("login disconnect"),
+            0x03 => {
+                threshold = protocol::PacketReader::new(&body)
+                    .varint()
+                    .unwrap_or(-1);
+                comp = true;
+            }
+            0x02 => {
+                write_frame_c(&mut s, login::LOGIN_ACKNOWLEDGED, &[], threshold)?;
+                break;
+            }
+            other => bail!("unexpected login packet 0x{other:02x}"),
+        }
+    }
+
+    // ---- Configuration 阶段
+    let mut ci = Vec::new();
+    protocol::put_string(&mut ci, "zh_CN");
+    protocol::put_i8(&mut ci, 6);
+    protocol::put_varint(&mut ci, 0);
+    protocol::put_bool(&mut ci, true);
+    protocol::put_u8(&mut ci, 0xFF);
+    protocol::put_varint(&mut ci, 1);
+    protocol::put_bool(&mut ci, false);
+    protocol::put_bool(&mut ci, true);
+    write_frame_c(&mut s, 0x00, &ci, threshold)?;
+
+    let mut known = Vec::new();
+    protocol::put_varint(&mut known, 1);
+    protocol::put_string(&mut known, "minecraft");
+    protocol::put_string(&mut known, "core");
+    protocol::put_string(&mut known, "1.21");
+
+    let mut registry_packets = 0usize;
+    loop {
+        let (id, body) = read_frame_c(&mut s, threshold)?;
+        match id {
+            0x03 => {
+                write_frame_c(&mut s, 0x03, &[], threshold)?;
+                break;
+            }
+            0x04 => write_frame_c(&mut s, 0x04, &body, threshold)?,
+            0x05 => write_frame_c(&mut s, 0x05, &body, threshold)?,
+            0x07 => registry_packets += 1,
+            0x0e => write_frame_c(&mut s, 0x07, &known, threshold)?,
+            0x02 => {
+                let mut r = protocol::PacketReader::new(&body);
+                let reason = r.string().unwrap_or_default();
+                bail!("configuration disconnect: {reason}");
+            }
+            _ => {}
+        }
+    }
+
+    // ---- Play 阶段：等待 Login(play) 0x2b
+    loop {
+        let (id, body) = read_frame_c(&mut s, threshold)?;
+        if id == 0x2b {
+            let mut info = parse_login_play(&body)?;
+            info.registry_packets = registry_packets;
+            return Ok(info);
+        }
+        // 其余包（能力、物品栏、keep alive 等）暂忽略
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

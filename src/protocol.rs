@@ -228,6 +228,9 @@ impl<'a> PacketReader<'a> {
     pub fn u8(&mut self) -> Option<u8> {
         self.take(1).map(|b| b[0])
     }
+    pub fn i8(&mut self) -> Option<i8> {
+        self.take(1).map(|b| b[0] as i8)
+    }
     pub fn u16(&mut self) -> Option<u16> {
         self.take(2).map(|b| u16::from_be_bytes([b[0], b[1]]))
     }
