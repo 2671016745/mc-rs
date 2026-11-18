@@ -69,6 +69,12 @@ enum Cmd {
         #[arg(long)]
         password: Option<String>,
     },
+    /// 正版账号进服会话验证（join）
+    MicrosoftJoin {
+        access_token: String,
+        selected_profile: String,
+        server_id: String,
+    },
     /// 微软 device code 登录（显示用户码与验证地址）
     AuthMicrosoftDevice {
         #[arg(long)]
@@ -229,6 +235,14 @@ fn main() -> Result<()> {
         } => {
             auth::yggdrasil_join(&authserver, &access_token, &selected_profile, &server_id)?;
             println!("join ok");
+        }
+        Cmd::MicrosoftJoin {
+            access_token,
+            selected_profile,
+            server_id,
+        } => {
+            auth::microsoft_join(&access_token, &selected_profile, &server_id)?;
+            println!("microsoft join ok");
         }
         Cmd::AuthMicrosoftDevice { client_id } => {
             let d = auth::microsoft_device_code(&client_id)?;

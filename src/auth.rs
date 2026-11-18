@@ -199,6 +199,7 @@ const XBL_AUTH: &str = "https://user.auth.xboxlive.com/user/authenticate";
 const XSTS_AUTH: &str = "https://xsts.auth.xboxlive.com/xsts/authorize";
 const MC_LOGIN: &str = "https://api.minecraftservices.com/authentication/login_with_xbox";
 const MC_PROFILE: &str = "https://api.minecraftservices.com/minecraft/profile";
+const MC_SESSION_JOIN: &str = "https://api.minecraftservices.com/session/join";
 
 #[derive(Debug, Deserialize)]
 pub struct DeviceCode {
@@ -314,6 +315,19 @@ fn minecraft_login(uhs: &str, xsts_token: &str) -> Result<String> {
         .context("minecraft login_with_xbox")?;
     let r: McLoginResponse = resp.into_json()?;
     Ok(r.access_token)
+}
+
+/// 正版账号进服：向官方 session 服务器声明 join（服务器会回 hasJoined 校验）。
+pub fn microsoft_join(access_token: &str, selected_profile: &str, server_id: &str) -> Result<()> {
+    let body = serde_json::json!({
+        "accessToken": access_token,
+        "selectedProfile": selected_profile,
+        "serverId": server_id,
+    });
+    ureq::post(MC_SESSION_JOIN)
+        .send_json(&body)
+        .context("minecraft session join")?;
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
