@@ -645,12 +645,14 @@ pub fn login_play(
                 Ok(ch) => {
                     non_air += ch.non_air();
                     chunks += 1;
+                    let m = crate::mesh::mesh_chunk(&ch);
                     eprintln!(
-                        "chunk {},{} sections={} non_air={}",
+                        "chunk {},{} sections={} non_air={} triangles={}",
                         ch.x,
                         ch.z,
                         ch.sections.len(),
-                        ch.non_air()
+                        ch.non_air(),
+                        m.triangles()
                     );
                 }
                 Err(e) => eprintln!("chunk parse error: {e}"),
