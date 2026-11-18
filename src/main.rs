@@ -94,6 +94,11 @@ enum Cmd {
         #[arg(long, default_value_t = 25565)]
         port: u16,
         name: String,
+        /// 第三方 Yggdrasil 服务器；给了就走第三方登录并进服后自动 join
+        #[arg(long)]
+        authserver: Option<String>,
+        #[arg(long)]
+        password: Option<String>,
     },
     /// 加载自研 mod（Lua）
     Mods { dir: PathBuf },
@@ -304,8 +309,30 @@ fn main() -> Result<()> {
             address,
             port,
             name,
+            authserver,
+            password,
         } => {
-            let info = net::login_play(&address, port, &name)?;
+            let account = match authserver {
+                Some(srv) => {
+                    let pw = match password {
+                        Some(p) => p,
+                        None => read_line_prompt("password: ")?,
+                    };
+                    let client = uuid::Uuid::new_v4().simple().to_string();
+                    auth::yggdrasil_account(&srv, &name, &pw, &client)?
+                }
+                None => auth::offline(&name),
+            };
+            let info = net::login_play(&address, port, &account)?;
+            if let auth::AuthKind::ThirdParty { authserver, .. } = &account.kind {
+                auth::yggdrasil_join(
+                    authserver,
+                    &account.access_token,
+                    &account.uuid.simple().to_string(),
+                    &info.server_id_hash,
+                )?;
+                eprintln!("已向 {authserver} 发送会话验证（join）");
+            }
             println!("{}", serde_json::to_string_pretty(&info)?);
         }
         Cmd::Mods { dir } => {

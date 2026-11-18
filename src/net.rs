@@ -16,7 +16,7 @@ pub fn connect(address: &str, port: u16) -> Result<TcpStream> {
     Ok(stream)
 }
 
-fn read_varint_stream(s: &mut TcpStream) -> Result<i32> {
+fn read_varint_stream<S: Read>(s: &mut S) -> Result<i32> {
     let mut value = 0u32;
     let mut shift = 0u32;
     for _ in 0..5 {
@@ -31,14 +31,14 @@ fn read_varint_stream(s: &mut TcpStream) -> Result<i32> {
     bail!("varint too long")
 }
 
-pub fn write_frame(s: &mut TcpStream, packet_id: i32, body: &[u8]) -> Result<()> {
+pub fn write_frame<S: Write>(s: &mut S, packet_id: i32, body: &[u8]) -> Result<()> {
     let framed = protocol::frame(packet_id, body);
     s.write_all(&framed)?;
     s.flush()?;
     Ok(())
 }
 
-pub fn read_frame(s: &mut TcpStream) -> Result<(i32, Vec<u8>)> {
+pub fn read_frame<S: Read>(s: &mut S) -> Result<(i32, Vec<u8>)> {
     let len = read_varint_stream(s)?;
     if len <= 0 || len > 8 * 1024 * 1024 {
         bail!("bad frame length {len}");
@@ -292,8 +292,8 @@ fn varint_len(v: i32) -> i32 {
 }
 
 /// 写压缩帧（Set Compression 之后）。
-pub fn write_frame_c(
-    s: &mut TcpStream,
+pub fn write_frame_c<S: Write>(
+    s: &mut S,
     packet_id: i32,
     body: &[u8],
     threshold: i32,
@@ -322,7 +322,7 @@ pub fn write_frame_c(
 }
 
 /// 读压缩帧。
-pub fn read_frame_c(s: &mut TcpStream, _threshold: i32) -> Result<(i32, Vec<u8>)> {
+pub fn read_frame_c<S: Read>(s: &mut S, _threshold: i32) -> Result<(i32, Vec<u8>)> {
     let len = read_varint_stream(s)?;
     if len <= 0 || len > 8 * 1024 * 1024 {
         bail!("bad frame length {len}");
@@ -419,6 +419,9 @@ pub struct PlayLogin {
     pub registry_packets: usize,
     pub chunks_loaded: usize,
     pub non_air_blocks: usize,
+    /// 服务器 ID 与其 SHA1 会话哈希（第三方/正版进服时用于 join）
+    pub server_id: String,
+    pub server_id_hash: String,
 }
 
 fn parse_login_play(body: &[u8]) -> Result<PlayLogin> {
@@ -477,30 +480,102 @@ fn parse_login_play(body: &[u8]) -> Result<PlayLogin> {
         registry_packets: 0,
         chunks_loaded: 0,
         non_air_blocks: 0,
+        server_id: String::new(),
+        server_id_hash: String::new(),
     })
 }
 
-/// 完整进服：登录 → configuration 协商 → Play 的 Login 包。
+/// 登录传输层：明文 TCP 或 AES-CFB8 加密流。
+pub enum Tx {
+    Plain(TcpStream),
+    Enc(EncryptedStream),
+}
+
+impl Tx {
+    fn read(&mut self, comp: bool, threshold: i32) -> Result<(i32, Vec<u8>)> {
+        match self {
+            Tx::Plain(s) => {
+                if comp {
+                    read_frame_c(s, threshold)
+                } else {
+                    read_frame(s)
+                }
+            }
+            Tx::Enc(s) => {
+                if comp {
+                    read_frame_c(s, threshold)
+                } else {
+                    read_frame(s)
+                }
+            }
+        }
+    }
+
+    fn write(&mut self, id: i32, body: &[u8], comp: bool, threshold: i32) -> Result<()> {
+        match self {
+            Tx::Plain(s) => {
+                if comp {
+                    write_frame_c(s, id, body, threshold)
+                } else {
+                    write_frame(s, id, body)
+                }
+            }
+            Tx::Enc(s) => {
+                if comp {
+                    write_frame_c(s, id, body, threshold)
+                } else {
+                    write_frame(s, id, body)
+                }
+            }
+        }
+    }
+}
+
+/// 完整进服：登录（含加密）→ configuration 协商 → Play 的 Login 包。
 ///
 /// 与 `login_offline` 的区别：本函数完成 configuration 阶段（Client Information、
-/// Known Packs、Registry/Tags、Finish Configuration），进入 Play 并解析 Login(play)。
-pub fn login_play(address: &str, port: u16, name: &str) -> Result<PlayLogin> {
-    let account = crate::auth::offline(name);
+/// Known Packs、Registry/Tags、Finish Configuration），进入 Play 并解析 Login(play)；
+/// 服务器在登录阶段下发 Encryption Request 时启用 AES-CFB8 加密流。
+pub fn login_play(
+    address: &str,
+    port: u16,
+    account: &crate::auth::Account,
+) -> Result<PlayLogin> {
     let mut s = connect(address, port)?;
     write_handshake(&mut s, address, port, STATE_LOGIN)?;
-    write_frame(&mut s, login::START, &login_start_body(&account.name, account.uuid))?;
+    write_frame(
+        &mut s,
+        login::START,
+        &login_start_body(&account.name, account.uuid),
+    )?;
+    let mut tx = Tx::Plain(s);
 
     // ---- Login 阶段
     let mut threshold = -1i32;
     let mut comp = false;
+    let mut server_id = String::new();
+    let mut server_id_hash = String::new();
     loop {
-        let (id, body) = if comp {
-            read_frame_c(&mut s, threshold)?
-        } else {
-            read_frame(&mut s)?
-        };
+        let (id, body) = tx.read(comp, threshold)?;
         match id {
             0x00 => bail!("login disconnect"),
+            0x01 => {
+                let req = parse_encryption_request(&body)?;
+                let (enc_secret, enc_verify, secret) =
+                    encryption_response(&req.public_key, &req.verify_token)?;
+                server_id_hash =
+                    crate::auth::server_id_hash(&req.server_id, &secret, &req.public_key);
+                server_id = req.server_id.clone();
+                tx.write(
+                    0x01,
+                    &encryption_response_body(&enc_secret, &enc_verify),
+                    comp,
+                    threshold,
+                )?;
+                if let Tx::Plain(inner) = tx {
+                    tx = Tx::Enc(EncryptedStream::new(inner, &secret)?);
+                }
+            }
             0x03 => {
                 threshold = protocol::PacketReader::new(&body)
                     .varint()
@@ -508,7 +583,7 @@ pub fn login_play(address: &str, port: u16, name: &str) -> Result<PlayLogin> {
                 comp = true;
             }
             0x02 => {
-                write_frame_c(&mut s, login::LOGIN_ACKNOWLEDGED, &[], threshold)?;
+                tx.write(login::LOGIN_ACKNOWLEDGED, &[], comp, threshold)?;
                 break;
             }
             other => bail!("unexpected login packet 0x{other:02x}"),
@@ -525,7 +600,7 @@ pub fn login_play(address: &str, port: u16, name: &str) -> Result<PlayLogin> {
     protocol::put_varint(&mut ci, 1);
     protocol::put_bool(&mut ci, false);
     protocol::put_bool(&mut ci, true);
-    write_frame_c(&mut s, 0x00, &ci, threshold)?;
+    tx.write(0x00, &ci, comp, threshold)?;
 
     let mut known = Vec::new();
     protocol::put_varint(&mut known, 1);
@@ -535,16 +610,16 @@ pub fn login_play(address: &str, port: u16, name: &str) -> Result<PlayLogin> {
 
     let mut registry_packets = 0usize;
     loop {
-        let (id, body) = read_frame_c(&mut s, threshold)?;
+        let (id, body) = tx.read(comp, threshold)?;
         match id {
             0x03 => {
-                write_frame_c(&mut s, 0x03, &[], threshold)?;
+                tx.write(0x03, &[], comp, threshold)?;
                 break;
             }
-            0x04 => write_frame_c(&mut s, 0x04, &body, threshold)?,
-            0x05 => write_frame_c(&mut s, 0x05, &body, threshold)?,
+            0x04 => tx.write(0x04, &body, comp, threshold)?,
+            0x05 => tx.write(0x05, &body, comp, threshold)?,
             0x07 => registry_packets += 1,
-            0x0e => write_frame_c(&mut s, 0x07, &known, threshold)?,
+            0x0e => tx.write(0x07, &known, comp, threshold)?,
             0x02 => {
                 let mut r = protocol::PacketReader::new(&body);
                 let reason = r.string().unwrap_or_default();
@@ -559,7 +634,7 @@ pub fn login_play(address: &str, port: u16, name: &str) -> Result<PlayLogin> {
     let mut chunks = 0usize;
     let mut non_air = 0usize;
     while info.is_none() || chunks == 0 {
-        let (id, body) = read_frame_c(&mut s, threshold)?;
+        let (id, body) = tx.read(comp, threshold)?;
         match id {
             0x2b => {
                 let mut i = parse_login_play(&body)?;
@@ -586,6 +661,8 @@ pub fn login_play(address: &str, port: u16, name: &str) -> Result<PlayLogin> {
     let mut i = info.context("no login play packet")?;
     i.chunks_loaded = chunks;
     i.non_air_blocks = non_air;
+    i.server_id = server_id;
+    i.server_id_hash = server_id_hash;
     Ok(i)
 }
 
