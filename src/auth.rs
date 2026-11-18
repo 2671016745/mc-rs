@@ -135,6 +135,62 @@ pub fn yggdrasil_account(
     })
 }
 
+// ------------------------------------------------------------------ 会话验证
+
+/// Java 的 serverId hash：`BigInteger(1, SHA1(serverId + secret + pubKey)).toString(16)`。
+pub fn server_id_hash(server_id: &str, shared_secret: &[u8], public_key: &[u8]) -> String {
+    use sha1::{Digest, Sha1};
+    let mut h = Sha1::new();
+    h.update(server_id.as_bytes());
+    h.update(shared_secret);
+    h.update(public_key);
+    let d = h.finalize();
+    let hex: String = d.iter().map(|b| format!("{b:02x}")).collect();
+    let t = hex.trim_start_matches('0');
+    if t.is_empty() {
+        "0".to_string()
+    } else {
+        t.to_string()
+    }
+}
+
+/// 通知第三方 authserver：该账号正在加入某服务器（进服前必做）。
+pub fn yggdrasil_join(
+    authserver: &str,
+    access_token: &str,
+    selected_profile: &str,
+    server_id: &str,
+) -> Result<()> {
+    let body = serde_json::json!({
+        "accessToken": access_token,
+        "selectedProfile": selected_profile,
+        "serverId": server_id,
+    });
+    ureq::post(&yggdrasil_url(
+        authserver,
+        "sessionserver/session/minecraft/join",
+    ))
+    .send_json(&body)
+    .context("yggdrasil join")?;
+    Ok(())
+}
+
+/// authserver 侧校验：某玩家是否声明加入了该服务器（返回其 profile）。
+pub fn yggdrasil_has_joined(
+    authserver: &str,
+    username: &str,
+    server_id: &str,
+) -> Result<Option<YggdrasilProfile>> {
+    let url = format!(
+        "{}/sessionserver/session/minecraft/hasJoined?username={}&serverId={}",
+        authserver.trim_end_matches('/'),
+        username,
+        server_id
+    );
+    let resp = ureq::get(&url).call().context("yggdrasil hasJoined")?;
+    Ok(Some(resp.into_json()?))
+}
+
 // ------------------------------------------------------------------ 微软
 
 const MS_DEVICECODE: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";

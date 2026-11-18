@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use mc_rs::{assets, auth, modruntime, modsys, net, registry, server, skin};
+use mc_rs::{assets, auth, jar, modruntime, modsys, net, registry, server, skin};
 #[cfg(feature = "render")]
 use mc_rs::render;
 use std::path::PathBuf;
@@ -42,6 +42,21 @@ enum Cmd {
     /// 解析 NeoForge / 自研 mod 清单
     Mod {
         file: PathBuf,
+    },
+    /// 解析 mod jar（清单、内容统计、是否需要 JVM）
+    JarInspect { jar: PathBuf },
+    /// 安装 mod jar 的内容资源（assets/、data/）到游戏目录
+    JarInstall {
+        jar: PathBuf,
+        #[arg(long, default_value = ".")]
+        game_dir: PathBuf,
+    },
+    /// 第三方会话验证（join：通知 authserver 该账号正在加入某服务器）
+    AuthYggdrasilJoin {
+        authserver: String,
+        access_token: String,
+        selected_profile: String,
+        server_id: String,
     },
     /// 离线登录（生成离线 UUID）
     AuthOffline {
@@ -167,6 +182,23 @@ fn main() -> Result<()> {
             let m = modsys::parse_file(&file)?;
             println!("{}", serde_json::to_string_pretty(&m)?);
         }
+        Cmd::JarInspect { jar } => {
+            let r = jar::inspect(&jar)?;
+            println!("{}", serde_json::to_string_pretty(&r)?);
+            if r.needs_jvm {
+                eprintln!("注意：该 jar 含 Java 字节码或 mixin，Rust 本体无法执行其逻辑；仅内容资源可用。");
+            }
+        }
+        Cmd::JarInstall { jar, game_dir } => {
+            let r = jar::inspect(&jar)?;
+            let n = jar::extract_content(&jar, &game_dir)?;
+            println!(
+                "从 {} 解压 {} 个内容文件到 {}",
+                r.mod_id.as_deref().unwrap_or("jar"),
+                n,
+                game_dir.display()
+            );
+        }
         Cmd::AuthOffline { name } => {
             let a = auth::offline(&name);
             println!("{}", serde_json::to_string_pretty(&a)?);
@@ -183,6 +215,15 @@ fn main() -> Result<()> {
             let client = uuid::Uuid::new_v4().simple().to_string();
             let a = auth::yggdrasil_account(&authserver, &username, &password, &client)?;
             println!("{}", serde_json::to_string_pretty(&a)?);
+        }
+        Cmd::AuthYggdrasilJoin {
+            authserver,
+            access_token,
+            selected_profile,
+            server_id,
+        } => {
+            auth::yggdrasil_join(&authserver, &access_token, &selected_profile, &server_id)?;
+            println!("join ok");
         }
         Cmd::AuthMicrosoftDevice { client_id } => {
             let d = auth::microsoft_device_code(&client_id)?;

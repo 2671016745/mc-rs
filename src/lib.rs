@@ -10,6 +10,7 @@
 
 pub mod assets;
 pub mod auth;
+pub mod jar;
 pub mod modruntime;
 pub mod modsys;
 pub mod net;
