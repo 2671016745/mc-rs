@@ -6,12 +6,13 @@ edition = "2024"
 [features]
 default = []
 # 渲染层为可选：wgpu/winit 依赖重，默认不编译（小内存机器友好）。
-render = ["dep:wgpu", "dep:winit", "dep:pollster"]
+render = ["dep:wgpu", "dep:winit", "dep:pollster", "dep:bytemuck"]
 
 [dependencies]
 aes = "0.9"
 anyhow = "1.0.104"
 base64 = "0.23.1"
+bytemuck = { version = "1", optional = true }
 clap = { version = "4.6.7", features = ["derive"] }
 flate2 = "1.1.11"
 md5 = "0.8.1"
