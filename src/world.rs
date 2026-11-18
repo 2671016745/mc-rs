@@ -222,7 +222,8 @@ mod tests {
     fn single_value_container() {
         let mut buf = Vec::new();
         crate::protocol::put_u8(&mut buf, 0); // bits
-        crate::protocol::put_varint(&mut buf, 7);
+        crate::protocol::put_varint(&mut buf, 7); // 单值
+        crate::protocol::put_varint(&mut buf, 0); // Data Array Length（恒 0）
         let mut r = PacketReader::new(&buf);
         let v = read_paletted(&mut r).unwrap();
         assert_eq!(v.len(), 4096);
