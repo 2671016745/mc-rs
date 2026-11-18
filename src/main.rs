@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use mc_rs::{assets, auth, jar, modruntime, modsys, net, registry, server, skin};
+use mc_rs::{assets, auth, jar, matrix, modruntime, modsys, net, registry, server, skin};
 #[cfg(feature = "render")]
 use mc_rs::render;
 use std::path::PathBuf;
@@ -57,6 +57,17 @@ enum Cmd {
         access_token: String,
         selected_profile: String,
         server_id: String,
+    },
+    /// 版本 × 加载器矩阵（Fabric Loader / Yarn / NeoForge）
+    Matrix {
+        /// 指定游戏版本则输出该版本矩阵；留空列出全部正式版
+        #[arg(long)]
+        game: Option<String>,
+    },
+    /// 分层推进清单：先各游戏版本×加载器最新版，再回最新游戏版本写次新版……
+    Sweep {
+        #[arg(long, default_value_t = 5)]
+        max_games: usize,
     },
     /// 离线登录（生成离线 UUID）
     AuthOffline {
@@ -209,6 +220,20 @@ fn main() -> Result<()> {
                 n,
                 game_dir.display()
             );
+        }
+        Cmd::Matrix { game } => match game {
+            Some(g) => {
+                let m = matrix::matrix_for(&g)?;
+                println!("{}", serde_json::to_string_pretty(&m)?);
+            }
+            None => {
+                let v = matrix::game_versions()?;
+                println!("{}", serde_json::to_string_pretty(&v)?);
+            }
+        },
+        Cmd::Sweep { max_games } => {
+            let rows = matrix::sweep(max_games)?;
+            println!("{}", serde_json::to_string_pretty(&rows)?);
         }
         Cmd::AuthOffline { name } => {
             let a = auth::offline(&name);
