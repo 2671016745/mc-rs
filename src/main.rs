@@ -151,6 +151,13 @@ fn read_line_prompt(prompt: &str) -> Result<String> {
 }
 
 fn main() -> Result<()> {
+    // 双击启动（无任何参数）时，默认打开渲染窗口，避免黑框一闪而过
+    #[cfg(feature = "render")]
+    {
+        if std::env::args().len() == 1 {
+            return render::run();
+        }
+    }
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Fetch {
